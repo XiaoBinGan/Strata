@@ -7,14 +7,60 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from packaging.requirements import Requirement
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "packaging"))
 
+import lock_wheels as lw  # noqa: E402
 import package_terminal as pt  # noqa: E402
 
 
 def norm(name):
     return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def parse_pins(text: str) -> dict[str, list[tuple[str, object]]]:
+    """The pins in a requirements file, read the way packaging/lock_wheels.py reads the same lines (#4526).
+
+    `packaging.requirements.Requirement` keeps an extras pin (`psycopg[binary]==3.3.6`) and the environment marker;
+    the regex this check used before matched only a plain name and could not evaluate a marker at all."""
+    pins: dict[str, list[tuple[str, object]]] = {}
+    for line in text.splitlines():
+        line = line.split(" #")[0].strip()
+        if not line or line.startswith(("#", "-")):      # comments and pip options (--index-url ...) are not pins
+            continue
+        req = Requirement(line)
+        version = next((s.version for s in req.specifier if s.operator == "=="), None)
+        if version is None:
+            continue
+        pins.setdefault(norm(req.name), []).append((version, req.marker))
+    return pins
+
+
+def requirement_pins() -> dict[str, list[tuple[str, object]]]:
+    """The direct runtime pins of requirements.txt and requirements-monitor.txt."""
+    pins: dict[str, list[tuple[str, object]]] = {}
+    for name in ("requirements.txt", "requirements-monitor.txt"):
+        for pkg, versions in parse_pins((ROOT / name).read_text(encoding="utf-8")).items():
+            pins.setdefault(pkg, []).extend(versions)
+    return pins
+
+
+def pins_for_target(pins: dict[str, list[tuple[str, object]]], target: str) -> dict[str, str]:
+    """{package: version} a lock for `target` must carry: a pin whose marker is false for the target is not demanded.
+
+    The marker is evaluated in the environment lock_wheels.py builds the lock with, so this check cannot drift from
+    the tool that made the locks (a Windows-only pin belongs in the Windows lock only, and a Linux-only one must not
+    be demanded there)."""
+    env = {**lw.TARGETS[target]["env"], "python_version": lw.PYTHON, "python_full_version": lw.PYTHON + ".15",
+           "implementation_name": "cpython", "platform_python_implementation": "CPython"}
+    out = {}
+    for pkg, versions in pins.items():
+        applicable = [version for version, marker in versions if marker is None or marker.evaluate(env)]
+        if applicable:
+            out[pkg] = applicable[0]
+    return out
 
 
 class InterpreterPins(unittest.TestCase):
@@ -72,23 +118,14 @@ class WheelLocks(unittest.TestCase):
                     self.assertTrue(e["hashes"], name)
 
     def test_the_locks_agree_with_requirements_txt(self):
-        pins = {}
-        for name in ("requirements.txt", "requirements-monitor.txt"):
-            for line in (ROOT / name).read_text(encoding="utf-8").splitlines():
-                m = re.match(r"^([A-Za-z0-9_.-]+)==([^\s;]+)(?:\s*;\s*(.*))?$", line.split(" #")[0].strip())
-                if m:
-                    pins.setdefault(norm(m.group(1)), []).append((m.group(2), m.group(3) or ""))
+        pins = requirement_pins()
+        self.assertTrue(pins)                                # the parser found the direct pins at all
         for lock in self.locks():
+            target = lock.name[len("runtime-"):-len("-cp312.txt")]
             names = pt.lock_names(lock)
             with self.subTest(lock.name):
-                for pkg, versions in pins.items():
-                    if pkg == "colorama":
-                        self.assertEqual(pkg in names, "windows" in lock.name)
-                        continue
-                    if pkg == "numpy":                       # python_version markers: the 3.12 line applies
-                        self.assertEqual(names[pkg], "2.5.3")
-                        continue
-                    self.assertEqual(names.get(pkg), versions[0][0], pkg)
+                for pkg, version in pins_for_target(pins, target).items():
+                    self.assertEqual(names.get(pkg), version, pkg)
                 self.assertNotIn("cmake", names)             # build tools never ship in the bundle
                 self.assertNotIn("ninja", names)
 
@@ -97,6 +134,26 @@ class WheelLocks(unittest.TestCase):
         for flag in ("--require-hashes", "--no-deps", "--only-binary=:all:"):
             self.assertIn(flag, text)
         self.assertNotIn('"--upgrade"', text)               # pip itself is the interpreter's, not a fresh download
+
+
+class RequirementPins(unittest.TestCase):
+    """#4526: the agreement check reads the pins and their markers the way packaging/lock_wheels.py does."""
+
+    def test_an_extras_pin_is_read(self):
+        # `psycopg[binary]==3.3.6`: the old regex `^([A-Za-z0-9_.-]+)==...` matched nothing, so a lock that dropped
+        # the package still passed the check.
+        pins = parse_pins("psycopg[binary]==3.3.6\n")
+        self.assertEqual([version for version, _ in pins["psycopg"]], ["3.3.6"])
+
+    def test_a_windows_only_pin_is_not_demanded_in_another_lock(self):
+        pins = parse_pins('colorama==0.4.6; sys_platform == "win32"\n')
+        self.assertEqual(pins_for_target(pins, "linux-x86_64"), {})
+        self.assertEqual(pins_for_target(pins, "windows-x86_64"), {"colorama": "0.4.6"})
+
+    def test_a_linux_only_pin_is_not_demanded_in_the_windows_lock(self):
+        pins = parse_pins('embedded-postgres==18.6.3; sys_platform != "win32"\n')
+        self.assertEqual(pins_for_target(pins, "windows-x86_64"), {})
+        self.assertEqual(pins_for_target(pins, "linux-x86_64"), {"embedded-postgres": "18.6.3"})
 
 
 class Launchers(unittest.TestCase):
