@@ -6,6 +6,7 @@ import json
 import math
 import re
 import socket
+import ssl
 import time
 import urllib.error
 import urllib.parse
@@ -40,6 +41,35 @@ class ClientError(Exception):
         super().__init__(message)
         self.exit_code = exit_code
         self.http_status = http_status
+
+
+def _unreachable(base_url: str, timeout: float, exc: BaseException) -> str:
+    """One line naming the address, the real cause and the next step.
+
+    urllib keeps the socket error that says what happened in ``URLError.reason``,
+    so reporting the wrapper's class name ("URLError") told a user nothing about
+    the address it tried or what to do next.
+    """
+    reason = getattr(exc, "reason", exc)
+    local = urllib.parse.urlsplit(base_url).hostname in ("127.0.0.1", "::1", "localhost")
+    if isinstance(reason, socket.gaierror):
+        cause, step = "the host name did not resolve", "check the address in --url or STRATA_URL"
+    elif isinstance(reason, ConnectionRefusedError):
+        cause = "connection refused: nothing is listening there"
+        step = ("start Strata with 'strata launch', or pass --url for the server you mean"
+                if local else "check the server's address and port")
+    elif isinstance(reason, (TimeoutError, socket.timeout)):
+        cause, step = (f"no answer within {timeout:g} s",
+                       "check that the server is running and reachable, or raise --timeout")
+    elif isinstance(reason, ssl.SSLError):
+        cause, step = "the TLS handshake failed", "use the server's https root, or a local SSH tunnel"
+    elif isinstance(reason, OSError) and reason.strerror:
+        cause, step = reason.strerror.lower(), "check that the server is running and reachable"
+    elif isinstance(reason, str) and reason.strip():
+        cause, step = reason.strip(), "check that the server is running and reachable"
+    else:
+        cause, step = type(reason).__name__, "check that the server is running and reachable"
+    return f"cannot reach Strata server at {base_url} ({cause}); {step}"
 
 
 def server_url(raw: str) -> str:
@@ -122,7 +152,7 @@ class Endpoint:
                                   http_status=e.code) from e
             raise ClientError(f"telemetry request failed: HTTP {e.code}", http_status=e.code) from e
         except (urllib.error.URLError, TimeoutError, socket.timeout, OSError) as e:
-            raise ClientError(f"cannot reach Strata server: {type(e).__name__}") from e
+            raise ClientError(_unreachable(self.base_url, self.timeout, e)) from e
         try:
             data = json.loads(body)
         except (ValueError, UnicodeDecodeError, RecursionError) as e:
