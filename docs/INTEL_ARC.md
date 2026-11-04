@@ -28,7 +28,7 @@ internet that one time), writes the run settings and starts the server. Nothing 
 - **Models are not downloaded for Intel cards yet.** Give the folder with `--model-path`; Strata does not touch your files.
 - **The draft layer (MTP) is not built for Intel cards**, so answers are a little slower than on a card with the full setup. An
   existing `mtp/rt` folder in the data folder is used.
-- `strata doctor --live` checks the driver, the render group and the card, and `strata update --check` shows the engine package.
+- `strata doctor --profile <run config or saved profile> --live` checks the driver, the render group and the card (the live comparison needs a saved model; without one the command exits 5 with `PROFILE_NOT_SELECTED_FOR_LIVE_PROBE`), and `strata update --check` shows the engine package.
 
 On Linux, `strata update` (Terminal) and Settings > Update (app) download the Intel engine package for a PC
 whose graphics card is made by Intel. One package serves Alchemist and Battlemage: the GPU code is compiled from SPIR-V at the

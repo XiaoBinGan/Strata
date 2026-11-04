@@ -109,8 +109,12 @@ Useful options:
 
 ```sh
 strata launch --status
-strata doctor --live
+strata doctor --profile <run config or saved profile> --live
 ```
+
+`strata models inspect MODEL_ID` prints the run config path (`Config: ...`) if you do not have it. `strata doctor` on its
+own still lists the installed components; without a profile the `--live` card comparison has nothing to compare against and
+exits 5 with `PROFILE_NOT_SELECTED_FOR_LIVE_PROBE`.
 
 Check the printed address and model, then query `/health` and `/v1/models` at that address. With the default port:
 

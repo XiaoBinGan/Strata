@@ -9,9 +9,12 @@ The normal release uses the app or `strata launch` and needs no `.bat` file. Det
 
 ```sh
 strata --version
-strata doctor --live
+strata doctor
 strata launch --status
 ```
+
+`strata doctor` works even before a model is set up. Its `--live` card check needs a saved model: pass
+`--profile <run config or saved profile>`, or it exits 5 with `PROFILE_NOT_SELECTED_FOR_LIVE_PROBE`.
 
 ## The desktop app and the Terminal
 
@@ -30,10 +33,11 @@ The engine is the part that talks to your graphics card. Strata only warns and s
 files stay on your computer, but the model may not run until the right engine is installed. The usual reasons are that
 no engine is installed yet and the update source has none for your card, that the engine found is for another make of
 card, or that the graphics driver is too old. In the app, open Settings, then Engine. In the Terminal, the message names
-the next step: run `strata update` and start again. Run `strata doctor --live` and `strata update --check` to see the
-selected GPU and driver, and check the [backend guide](INSTALL.md#what-you-need). Supported paths include Apple Silicon and
-Intel Arc on Linux, so do not assume every machine without an NVIDIA or AMD discrete card is unsupported. If the computer
-has no graphics card Strata can use (only an Intel UHD or Iris chip, a virtual machine, or Windows on ARM), Strata says so
+the next step: run `strata update` and start again. Run `strata doctor --profile <run config or saved profile> --live`
+and `strata update --check` to see the selected GPU and driver, and check the [backend guide](INSTALL.md#what-you-need).
+Supported paths include Apple Silicon and Intel Arc on Linux, so do not assume every machine without an NVIDIA or AMD
+discrete card is unsupported. If the computer has no graphics card Strata can use (only an Intel UHD or Iris chip, a
+virtual machine, or Windows on ARM), Strata says so
 and there is nothing to install. Verify `strata launch --status` and `/health` before calling the installation successful.
 
 **"This model needs a newer engine." (the app), or a button called Update engine.**
@@ -82,8 +86,11 @@ run it with `--save-logs`; see [Logs and bug reports](#logs-and-bug-reports).
 
 **Checking what is installed: `strata doctor`.**
 It is a read-only check of the installed engine parts (it changes nothing): which engine and helper files a saved model
-needs, and whether they are there. `strata doctor --live` also asks the computer which graphics cards it sees and compares
-them with the cards the model is set to use; `--output json` prints the same as data. Put its output into a bug report.
+needs, and whether they are there. Without a saved model it still lists the installed components and says that a profile
+is not selected. Add `--profile <run config or saved profile>` when you have a model: `strata doctor --profile <name> --live`
+also asks the computer which graphics cards it sees and compares them with the cards the model is set to use. Without a
+profile the card comparison has nothing to compare against and the command exits 5 with `PROFILE_NOT_SELECTED_FOR_LIVE_PROBE`;
+that is not a broken install. `--output json` prints the same as data. Put its output into a bug report.
 
 ## While installing or starting
 
@@ -359,7 +366,8 @@ overwrite local branches or edits just to make `git pull` succeed.
 - **App:** Settings → Engine → Diagnostics → View logs → Save logs. It writes one text file,
   `strata-diagnostics-<date>.txt`, into your Downloads folder and shows where. It holds the engine's messages, the failed
   steps and the end of each model's server log.
-- **Terminal:** include `strata --version`, `strata doctor --live`, `strata launch --status`, and the relevant log excerpt.
+- **Terminal:** include `strata --version`, `strata doctor` (add `--profile <run config or saved profile> --live` when a
+  model is set up), `strata launch --status`, and the relevant log excerpt.
 - **Windows app crash:** if the app closes right after you start it, it shows a message with the reason and writes
   `desktop-crash-<date>.log` in `%LOCALAPPDATA%\Strata\logs`; Save logs includes it, and so can you, by hand.
 - **Linux app crash:** if the window crashes or will not open, run the AppImage with `--save-logs` in a terminal; it writes

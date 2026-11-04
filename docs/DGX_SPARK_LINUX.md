@@ -11,8 +11,8 @@ Nothing here is known to work on another ARM machine.
   (a short chat), the Terminal (`strata launch`, `strata update`, `strata serve`) and the engine packages of the signed feed.
 - **Not built for ARM:** the desktop app (no AppImage; use the Terminal), the HIP, SYCL and CPU-only engines, and the Q2_0 and Gyro packs,
   whose CPU kernels are x86-only (the engine refuses them at start). Picture reading is compiled in and was not tried on the Spark.
-- **Not tested:** contexts above 128K, more than eight chat slots (four and eight were measured: "Several chats at once" below), a long soak. `strata doctor --live` lists the GB10 with no memory
-  figure, because `nvidia-smi` reports none for it.
+- **Not tested:** contexts above 128K, more than eight chat slots (four and eight were measured: "Several chats at once" below), a long soak. `strata doctor --profile <run config or saved profile> --live` lists the GB10 with no memory
+  figure, because `nvidia-smi` reports none for it; without a profile the command has nothing to compare and exits 5.
 
 ## Install with the Terminal
 
